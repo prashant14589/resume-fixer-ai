@@ -1,0 +1,42 @@
+{
+  "expo": {
+    "name": "Resume Fixer AI",
+    "slug": "resume-fixer-ai",
+    "version": "1.0.0",
+    "scheme": "resumefixerai",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.resumefixer.ai",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#07111F"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-dev-client"
+    ],
+    "extra": {
+      "productName": "Resume Fixer AI",
+      "productTagline": "Upload, fix, improve, download",
+      "eas": {
+        "projectId": "0faec7b5-347b-450e-b8eb-5a49bad4d400"
+      }
+    }
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "name": "resume-fixer-ai",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web",
+    "prebuild": "expo prebuild",
+    "android:native": "expo run:android"
+  },
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "@supabase/supabase-js": "^2.101.1",
+    "expo": "~54.0.33",
+    "expo-dev-client": "~6.0.20",
+    "expo-document-picker": "^55.0.11",
+    "expo-file-system": "^55.0.14",
+    "expo-linking": "^55.0.11",
+    "expo-print": "^55.0.11",
+    "expo-sharing": "^55.0.16",
+    "expo-status-bar": "~3.0.9",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "react-native": "0.81.5",
+    "react-native-razorpay": "^2.3.1",
+    "react-native-web": "^0.21.0"
+  },
+  "devDependencies": {
+    "@types/react": "~19.1.0",
+    "typescript": "~5.9.2"
+  },
+  "private": true
+}
