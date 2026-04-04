@@ -114,7 +114,14 @@ Return JSON:
 }
 
 export function buildPreviewPrompt(args: { bullet: string; rolePreset: string }) {
-  return `Rewrite this single resume bullet to be ATS-optimized for ${args.rolePreset} roles. Use a strong action verb. Preserve metrics only if already present; do not invent numbers. Output only the rewritten bullet, no commentary.
+  return `Rewrite this single resume bullet to be ATS-optimized for ${args.rolePreset} roles.
 
-Bullet: "${args.bullet}"`;
+Rules:
+- Use a strong action verb.
+- Preserve metrics only if already present; do not invent numbers.
+- Do NOT add technologies, adjectives, or details not present in the original.
+- Keep the scope and specificity of the original; only improve structure and verb choice.
+- Output only the rewritten bullet, no commentary.
+
+Original: "${args.bullet}"`;
 }

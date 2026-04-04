@@ -481,7 +481,15 @@ function startsWithStrongActionVerb(value: string) {
 }
 
 function looksLikeBullet(value: string) {
+  if (looksLikeObjectiveLine(value)) {
+    return false;
+  }
+
   return /^[A-Z][a-z]+(?:ed|ing)\b/.test(value);
+}
+
+function looksLikeObjectiveLine(value: string) {
+  return /\b(looking for|seeking|aspiring|passionate about|career in|looking to|eager to|want to|desires?\b|aim to|obtain a|pursue a|secure a)\b/i.test(value);
 }
 
 function hasSectionHeaders(value: string) {

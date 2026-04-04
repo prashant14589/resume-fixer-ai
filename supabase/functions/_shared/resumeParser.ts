@@ -286,9 +286,11 @@ function parseExperienceBlock(lines: string[]): ExperienceEntry {
 
   const meta = resolveMeta(metaLines);
 
+  const fallbackCompany = meta.role && /intern/i.test(meta.role) ? 'Internship' : 'Current Company';
+
   return {
     bullets: collapseWrappedBullets(bullets),
-    company: meta.company || 'Current Company',
+    company: meta.company || fallbackCompany,
     role: meta.role || 'Current Role',
   };
 }
