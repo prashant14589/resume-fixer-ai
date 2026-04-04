@@ -98,7 +98,14 @@ function extractSummary(sections: ResumeSections, lines: string[]) {
     return sections.summary.slice(0, 4).join(' ').trim() || undefined;
   }
 
-  return lines.find((line) => line.length > 60 && !isSectionHeader(line) && !looksLikeMetaLine(line));
+  return lines.find(
+    (line) =>
+      line.length > 60 &&
+      !isSectionHeader(line) &&
+      !looksLikeMetaLine(line) &&
+      !looksLikeAchievementSentence(line) &&
+      !isBulletLine(line)
+  );
 }
 
 function extractSkills(sections: ResumeSections, lines: string[]) {
