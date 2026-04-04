@@ -288,6 +288,11 @@ function parseExperienceBlock(lines: string[]): ExperienceEntry {
       continue;
     }
 
+    if (looksLikeContentLine(line)) {
+      bullets.push(cleanBullet(line));
+      continue;
+    }
+
     metaLines.push(line);
   }
 
@@ -367,7 +372,7 @@ function looksLikePersonalInfoLine(line: string) {
 
 function collapseWrappedBullets(bullets: string[]) {
   const cleaned = bullets.map((bullet) => bullet.trim()).filter(Boolean);
-  return cleaned.filter((bullet) => !looksLikeMetaLine(bullet));
+  return cleaned.filter((bullet) => looksLikeContentLine(bullet) || !looksLikeMetaLine(bullet));
 }
 
 function buildFallbackExperience(lines: string[]) {
@@ -378,7 +383,11 @@ function buildFallbackExperience(lines: string[]) {
         looksLikeAchievementSentence(line) ||
         /\b(project|internship|intern|frontend|backend|api|system|app|website)\b/i.test(line)
     )
-    .filter((line) => !looksLikeMetaLine(line) && !/^skills?/i.test(line) && !isSectionHeader(line))
+    .filter((line) => {
+      if (isSectionHeader(line) || /^skills?/i.test(line)) return false;
+      if (looksLikeContentLine(line)) return true;
+      return !looksLikeMetaLine(line);
+    })
     .slice(0, 8)
     .map((line) => cleanBullet(line));
 
@@ -391,6 +400,13 @@ function buildFallbackExperience(lines: string[]) {
         },
       ]
     : [];
+}
+
+function looksLikeContentLine(line: string) {
+  return (
+    line.split(/\s+/).length >= 5 &&
+    /\b(did|made|built|created|worked|helped|developed|designed|implemented|tested|managed|handled|fixed|led|used|using)\b/i.test(line)
+  );
 }
 
 function looksLikeEntryHeader(line: string) {

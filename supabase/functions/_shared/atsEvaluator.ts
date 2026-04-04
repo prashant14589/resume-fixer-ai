@@ -485,7 +485,8 @@ function looksLikeBullet(value: string) {
     return false;
   }
 
-  return /^[A-Z][a-z]+(?:ed|ing)\b/.test(value);
+  return /^[A-Z][a-z]+(?:ed|ing)\b/.test(value) ||
+    /^(built|did|led|made|ran|set|won|wrote|drove|took|gave|kept|sent|spent|taught|brought|cut|put|met)\b/i.test(value);
 }
 
 function looksLikeObjectiveLine(value: string) {
