@@ -1,29 +1,46 @@
 // @ts-nocheck
 
+import { scoreResumeAgainstJob } from '../_shared/atsEvaluator.ts';
+import { parseResumeTextToSections } from '../_shared/resumeParser.ts';
+import { buildPreviewPrompt } from '../_shared/rewritePrompts.ts';
+
 type AnalyzeResumeRequest = {
   fileBase64?: string;
   fileName?: string;
   jobDescription?: string;
   mimeType?: string;
+  rolePreset?: string;
   resumeText?: string;
 };
 
 type AnalyzeResumeResponse = {
   atsScore: number;
-  improvedScore: number;
-  summary: string;
-  issues: string[];
-  missingKeywords: string[];
-  matchScore?: number;
+  breakdown: {
+    bullet: { max: number; raw: number };
+    formatting: { max: number; raw: number };
+    keyword: { max: number; raw: number };
+    quant: { max: number; raw: number };
+    structure: { max: number; raw: number };
+  };
   improvedResume: {
-    summary: string;
     experience: Array<{
-      role: string;
-      company: string;
       bullets: string[];
+      company: string;
+      role: string;
     }>;
     skills: string[];
+    summary: string;
   };
+  improvedScore: number;
+  issues: string[];
+  matchScore?: number | null;
+  missingKeywords: string[];
+  preview?: {
+    after: string;
+    before: string;
+  };
+  summary: string;
+  weakBullets: string[];
 };
 
 Deno.serve(async (request) => {
@@ -43,13 +60,41 @@ Deno.serve(async (request) => {
       return json({ error: 'resume text could not be extracted' }, 400);
     }
 
-    const response = Deno.env.get('OPENAI_API_KEY')
-      ? await analyzeWithOpenAI({ ...body, resumeText })
-      : mockAnalyzeResponse({ ...body, resumeText });
+    const hasJobDescription = !!body.jobDescription?.trim();
+    const rolePreset = resolveRolePreset(body.rolePreset, resumeText);
+    const baseline = scoreResumeAgainstJob(resumeText, body.jobDescription, rolePreset);
+    const parsed = parseResumeTextToSections(resumeText);
+    const previewCandidate =
+      parsed.experience.flatMap((item) => item.bullets).find((bullet) => !hasMetric(bullet)) ?? baseline.weakBullets[0] ?? '';
+    const preview =
+      previewCandidate && Deno.env.get('OPENAI_API_KEY')
+        ? {
+            after: await previewWeakestBullet(previewCandidate, rolePreset),
+            before: previewCandidate,
+          }
+        : previewCandidate
+          ? {
+              after: buildFallbackPreview(previewCandidate),
+              before: previewCandidate,
+            }
+          : undefined;
 
     return json({
-      ...response,
+      atsScore: baseline.totalScore,
+      breakdown: baseline.breakdown,
+      improvedResume: {
+        experience: parsed.experience,
+        skills: parsed.skills,
+        summary: parsed.summary ?? buildFallbackSummaryFromSkills(parsed.skills),
+      },
+      improvedScore: baseline.totalScore,
+      issues: buildIssues(baseline, hasJobDescription),
+      matchScore: hasJobDescription ? baseline.breakdown.keyword.raw : null,
+      missingKeywords: hasJobDescription ? baseline.missingKeywords : [],
       mode: Deno.env.get('OPENAI_API_KEY') ? 'live' : 'mock',
+      preview,
+      summary: buildSummary(baseline.totalScore),
+      weakBullets: baseline.weakBullets,
     });
   } catch (error) {
     return json(
@@ -69,169 +114,90 @@ function json(payload: unknown, status = 200) {
   });
 }
 
-async function analyzeWithOpenAI(body: AnalyzeResumeRequest): Promise<AnalyzeResumeResponse> {
-  const apiKey = Deno.env.get('OPENAI_API_KEY');
-
-  const response = await fetch('https://api.openai.com/v1/responses', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'gpt-4o-mini',
-      input: [
-        {
-          role: 'system',
-          content: [{ text: buildSystemPrompt(), type: 'input_text' }],
-        },
-        {
-          role: 'user',
-          content: [{ text: buildUserPrompt(body), type: 'input_text' }],
-        },
-      ],
-      text: {
-        format: {
-          name: 'resume_analysis',
-          schema: {
-            additionalProperties: false,
-            properties: {
-              ats_score: { type: 'number' },
-              improved_score: { type: 'number' },
-              summary: { type: 'string' },
-              issues: { items: { type: 'string' }, type: 'array' },
-              missing_keywords: { items: { type: 'string' }, type: 'array' },
-              match_score: { type: ['number', 'null'] },
-              improved_resume: {
-                type: 'object',
-                additionalProperties: false,
-                properties: {
-                  summary: { type: 'string' },
-                  experience: {
-                    type: 'array',
-                    items: {
-                      type: 'object',
-                      additionalProperties: false,
-                      properties: {
-                        role: { type: 'string' },
-                        company: { type: 'string' },
-                        bullets: { items: { type: 'string' }, type: 'array' },
-                      },
-                      required: ['role', 'company', 'bullets'],
-                    },
-                  },
-                  skills: { items: { type: 'string' }, type: 'array' },
-                },
-                required: ['summary', 'experience', 'skills'],
-              },
-            },
-            required: [
-              'ats_score',
-              'improved_score',
-              'summary',
-              'issues',
-              'missing_keywords',
-              'match_score',
-              'improved_resume',
-            ],
-            type: 'object',
-          },
-          type: 'json_schema',
-          strict: true,
-        },
+async function previewWeakestBullet(weakestBullet: string, rolePreset: string) {
+  try {
+    const apiKey = Deno.env.get('OPENAI_API_KEY');
+    const response = await fetch('https://api.openai.com/v1/responses', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
       },
-    }),
-  });
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        input: [
+          {
+            role: 'user',
+            content: [{ text: buildPreviewPrompt({ bullet: weakestBullet, rolePreset }), type: 'input_text' }],
+          },
+        ],
+        max_output_tokens: 80,
+      }),
+    });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`OpenAI request failed: ${response.status} ${errorText}`);
+    if (!response.ok) {
+      return '';
+    }
+
+    const payload = await response.json();
+    return (payload.output?.[0]?.content?.[0]?.text ?? payload.output_text ?? '').trim();
+  } catch {
+    return '';
+  }
+}
+
+function buildFallbackPreview(bullet: string) {
+  return strengthenWeakBullet(bullet);
+}
+
+function buildSummary(score: number) {
+  if (score < 50) {
+    return 'Your resume is currently weak against ATS screening and needs stronger keywords, quantified bullets, and cleaner structure.';
   }
 
-  const payload = await response.json();
-  const outputText = payload.output?.[0]?.content?.[0]?.text ?? payload.output_text;
-
-  if (!outputText) {
-    throw new Error('OpenAI did not return structured output text.');
+  if (score < 75) {
+    return 'Your resume has some shortlist potential, but it still needs sharper bullet quality, stronger metrics, and better ATS alignment.';
   }
 
-  const parsed = JSON.parse(outputText);
-
-  return {
-    atsScore: parsed.ats_score,
-    improvedResume: parsed.improved_resume,
-    improvedScore: parsed.improved_score,
-    issues: parsed.issues,
-    matchScore: parsed.match_score ?? null,
-    missingKeywords: parsed.missing_keywords,
-    summary: parsed.summary,
-  } as AnalyzeResumeResponse;
+  return 'Your resume is fairly strong, but a tighter rewrite can still improve ATS alignment and recruiter readability.';
 }
 
-function mockAnalyzeResponse(body: AnalyzeResumeRequest): AnalyzeResumeResponse {
-  return {
-    atsScore: 39,
-    improvedScore: 84,
-    summary:
-      'Your resume will likely be rejected in its current form because it reads like duties, not outcomes, and it misses multiple recruiter and ATS keywords.',
-    issues: [
-      'Professional summary is weak and does not position you for shortlisting.',
-      'Experience bullets sound like responsibilities instead of achievements.',
-      'Important hiring keywords are missing.',
-      'Projects are not framed with clear business or user impact.',
-      'Skills are broad and not prioritized for the target role.',
-    ],
-    missingKeywords: body.jobDescription?.trim()
-      ? ['React', 'REST APIs', 'Problem Solving', 'Internship']
-      : ['Internship', 'Projects', 'Optimization'],
-    matchScore: body.jobDescription?.trim() ? 57 : null,
-    improvedResume: {
-      experience: [
-        {
-          bullets: [
-            'Built and improved project features using modern frontend practices, increasing usability and making demos easier to navigate for reviewers.',
-            'Integrated API-based flows and reduced manual steps, improving workflow clarity across end-to-end project execution.',
-            'Improved testing and debugging turnaround by identifying UI issues early and shipping cleaner iterations faster.',
-          ],
-          company: 'Academic Projects',
-          role: 'Software Developer',
-        },
-      ],
-      skills: ['React', 'JavaScript', 'REST APIs', 'Problem Solving', 'HTML', 'CSS'],
-      summary:
-        'Fresher software engineer with hands-on experience building projects in React and API-driven workflows, focused on shipping practical features and improving user experience.',
-    },
-  };
-}
+function buildIssues(
+  result: {
+    breakdown: AnalyzeResumeResponse['breakdown'];
+    missingKeywords: string[];
+    totalScore: number;
+    weakBullets: string[];
+  },
+  hasJobDescription: boolean
+) {
+  const issues: string[] = [];
 
-function buildSystemPrompt() {
-  return `
-Act as a senior HR recruiter and ATS optimization expert for the Indian job market.
-Be brutally honest about rejection risk.
-Use strong action verbs and measurable impact wherever reasonably supported.
-Tailor output to fresher, internship, and project-heavy resumes when relevant.
-Do not invent companies, dates, degrees, certifications, or metrics.
-Return strict JSON only.
-`.trim();
-}
+  if ((result.breakdown?.quant.raw ?? 0) < 60) {
+    issues.push('Bullet points lack measurable results and need more quantified impact.');
+  }
 
-function buildUserPrompt(body: AnalyzeResumeRequest) {
-  return `
-Resume:
-${body.resumeText}
+  if ((result.breakdown?.bullet.raw ?? 0) < 70) {
+    issues.push('Several bullets still read like responsibilities instead of achievement-led statements.');
+  }
 
-Job Description:
-${body.jobDescription ?? ''}
+  if (hasJobDescription && result.missingKeywords.length > 0) {
+    issues.push(`Important hiring keywords are missing: ${result.missingKeywords.slice(0, 4).join(', ')}.`);
+  }
 
-Output rules:
-- Return ATS score from 0 to 100.
-- Return improved score representing expected score after applying the rewritten resume.
-- Summary must mention rejection risk if the resume is weak.
-- Missing keywords should be specific and useful.
-- Improved resume must contain a professional summary, experience entries, and skills.
-- Experience bullets must use strong action verbs and achievement framing.
-- Tailor to the job description if provided.
-`.trim();
+  if ((result.breakdown?.formatting.raw ?? 0) < 70) {
+    issues.push('Formatting and section consistency can still hurt ATS readability.');
+  }
+
+  if ((result.breakdown?.structure.raw ?? 0) < 70) {
+    issues.push('Section structure is incomplete or not clearly labeled for ATS parsing.');
+  }
+
+  if (issues.length === 0 && result.totalScore < 85) {
+    issues.push('The resume needs sharper positioning for the target role to improve shortlist chances.');
+  }
+
+  return issues.slice(0, 5);
 }
 
 function extractResumeText(body: AnalyzeResumeRequest) {
@@ -266,6 +232,58 @@ function decodeBase64(value: string) {
   const binary = atob(value);
   const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
   return new TextDecoder().decode(bytes);
+}
+
+function resolveRolePreset(rolePreset: string | undefined, resumeText: string) {
+  if (rolePreset && rolePreset !== 'general') {
+    return rolePreset;
+  }
+
+  const normalized = resumeText.toLowerCase();
+
+  if (/\breact\b|\bjavascript\b|\bjava\b|\bpython\b|\brest api\b|\bgithub\b|\bweb development\b/.test(normalized)) {
+    return 'software-dev';
+  }
+
+  if (/\bpower bi\b|\btableau\b|\bpandas\b|\betl\b|\bdata analysis\b/.test(normalized)) {
+    return 'data-analyst';
+  }
+
+  return 'general';
+}
+
+function strengthenWeakBullet(bullet: string) {
+  const cleaned = bullet.replace(/^[\-*•\s]+/, '').trim();
+  const replacements: Array<[RegExp, string]> = [
+    [/^assisted in building\s+/i, 'Built '],
+    [/^supported in building\s+/i, 'Built '],
+    [/^worked on\s+/i, 'Contributed to '],
+    [/^helped\s+/i, 'Contributed to '],
+    [/^assisted\s+/i, 'Supported '],
+    [/^responsible for\s+/i, 'Owned '],
+    [/^part of\s+/i, 'Contributed to '],
+    [/^involved in\s+/i, 'Executed '],
+    [/^participated in\s+/i, 'Collaborated in '],
+    [/^fixed\s+/i, 'Resolved '],
+  ];
+
+  for (const [pattern, replacement] of replacements) {
+    if (pattern.test(cleaned)) {
+      return cleaned.replace(pattern, replacement).replace(/\s+/g, ' ').trim();
+    }
+  }
+
+  return cleaned;
+}
+
+function hasMetric(value: string) {
+  return /\b\d+([.,]\d+)?(%|x)?\b|₹|\$|\b\d+\s*(users|clients|hours|days|weeks|months|projects|teams|issues|operations|elements)\b/i.test(value);
+}
+
+function buildFallbackSummaryFromSkills(skills: string[]) {
+  if (skills.length === 0) return '';
+  const topSkills = skills.slice(0, 3).join(', ');
+  return `Motivated developer with hands-on project experience in ${topSkills}. Eager to apply technical skills in a professional environment.`;
 }
 
 const corsHeaders = {

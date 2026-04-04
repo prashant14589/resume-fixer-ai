@@ -1,7 +1,17 @@
-import * as Linking from 'expo-linking';
+import * as Sharing from 'expo-sharing';
+import { Platform } from 'react-native';
 
-export async function shareOnWhatsApp(beforeScore: number, afterScore: number) {
-  const message = `Bro my resume score went from ${beforeScore} to ${afterScore} 😳\nTry this: https://resume-fixer-ai.app`;
-  const url = `https://wa.me/?text=${encodeURIComponent(message)}`;
-  await Linking.openURL(url);
+export async function shareOnWhatsApp(uri: string, beforeScore: number, afterScore: number) {
+  if (Platform.OS === 'web') {
+    throw new Error('Image sharing is available on a native device only.');
+  }
+
+  if (!(await Sharing.isAvailableAsync())) {
+    throw new Error('Sharing is not available on this device.');
+  }
+
+  await Sharing.shareAsync(uri, {
+    dialogTitle: `My resume score improved from ${beforeScore} to ${afterScore}`,
+    mimeType: 'image/png',
+  });
 }

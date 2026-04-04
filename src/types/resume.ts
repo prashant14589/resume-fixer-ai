@@ -7,8 +7,27 @@ export type SelectedResume = {
 
 export type AnalyzeResumeInput = {
   jobDescription?: string;
+  rolePreset?: string;
   resumeText?: string;
   selectedResume?: SelectedResume | null;
+};
+
+export type ScoreBreakdownDimension = {
+  max: number;
+  raw: number;
+};
+
+export type ScoreBreakdown = {
+  bullet: ScoreBreakdownDimension;
+  formatting: ScoreBreakdownDimension;
+  keyword: ScoreBreakdownDimension;
+  quant: ScoreBreakdownDimension;
+  structure: ScoreBreakdownDimension;
+};
+
+export type ResumePreview = {
+  after: string;
+  before: string;
 };
 
 export type ImprovedExperience = {
@@ -25,12 +44,21 @@ export type ImprovedResume = {
 
 export type ResumeAnalysis = {
   atsScore: number;
+  breakdown?: ScoreBreakdown;
   improvedScore: number;
   improvedResume: ImprovedResume;
   issues: string[];
   matchScore?: number | null;
   missingKeywords: string[];
+  preview?: ResumePreview;
   summary: string;
+};
+
+export type ResumeFixResult = {
+  breakdown: ScoreBreakdown;
+  improvedResume: ImprovedResume;
+  improvedScore: number;
+  scoreDelta: number;
 };
 
 export type ResumeScanRecord = {
@@ -40,6 +68,7 @@ export type ResumeScanRecord = {
   isUnlocked: boolean;
   paymentId?: string;
   resumeTitle: string;
+  sourceRolePreset?: string;
   sourceResumeText: string;
   sourceJobDescription?: string;
 };

@@ -32,6 +32,7 @@ async function analyzeResumeWithSupabase(input: AnalyzeResumeInput): Promise<Res
     fileName: input.selectedResume?.name,
     jobDescription: input.jobDescription ?? '',
     mimeType: input.selectedResume?.mimeType,
+    rolePreset: input.rolePreset ?? 'general',
     resumeText,
   });
 

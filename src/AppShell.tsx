@@ -1,6 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Picker } from '@react-native-picker/picker';
+import { BlurView } from 'expo-blur';
+import { Platform, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import ViewShot from 'react-native-view-shot';
 
 import { BeforeAfterCard } from './components/BeforeAfterCard';
 import { ExportPackageCard } from './components/ExportPackageCard';
@@ -12,21 +15,31 @@ import { ScoreCard } from './components/ScoreCard';
 import { TrustBar } from './components/TrustBar';
 import { marketingAnalysis, paywallOffer, processingSteps } from './data/marketingDemo';
 import { getCredits } from './services/entitlement';
-import { getScanHistory, saveScanToHistory, unlockScanRecord } from './services/localHistory';
+import { getScanHistory, saveScanToHistory, unlockScanRecord, updateScanAnalysis } from './services/localHistory';
 import { exportResumePdf } from './services/pdf';
 import { startRazorpayPayment } from './services/payments';
 import { analyzeResume } from './services/resumeApi';
+import { generateResumeFix } from './services/resumeFixApi';
 import { shareOnWhatsApp } from './services/share';
 import { isSupabaseConfigured } from './services/supabase';
 import { palette } from './theme/palette';
 import { ResumeAnalysis, ResumeScanRecord } from './types/resume';
 
-type Screen = 'home' | 'analysis' | 'paywall' | 'result' | 'history';
+type Screen = 'home' | 'processing' | 'analysis' | 'paywall' | 'result' | 'history';
+
+const ROLE_OPTIONS = [
+  { label: 'Software Developer', value: 'software-dev' },
+  { label: 'Data Analyst', value: 'data-analyst' },
+  { label: 'Marketing / Digital', value: 'marketing' },
+  { label: 'Operations / Finance', value: 'operations' },
+  { label: 'General Fresher', value: 'general' },
+] as const;
 
 export default function AppShell() {
   const [screen, setScreen] = useState<Screen>('home');
   const [resumeText, setResumeText] = useState('');
   const [jobDescription, setJobDescription] = useState('');
+  const [selectedRole, setSelectedRole] = useState('software-dev');
   const [analysis, setAnalysis] = useState<ResumeAnalysis | null>(null);
   const [history, setHistory] = useState<ResumeScanRecord[]>([]);
   const [currentRecord, setCurrentRecord] = useState<ResumeScanRecord | null>(null);
@@ -34,6 +47,7 @@ export default function AppShell() {
   const [credits, setCredits] = useState(0);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isPaying, setIsPaying] = useState(false);
+  const scorecardRef = useRef<ViewShot | null>(null);
   const backendReady = isSupabaseConfigured();
 
   useEffect(() => {
@@ -59,17 +73,19 @@ export default function AppShell() {
 
     setIsAnalyzing(true);
     setErrorText('');
-    setScreen('analysis');
+    setScreen('processing');
 
     try {
       const nextAnalysis = await analyzeResume({
         jobDescription,
+        rolePreset: selectedRole,
         resumeText,
       });
 
       const record = await saveScanToHistory({
         analysis: nextAnalysis,
         sourceJobDescription: jobDescription,
+        sourceRolePreset: selectedRole,
         sourceResumeText: resumeText,
         title: deriveResumeTitle(resumeText),
       });
@@ -77,8 +93,14 @@ export default function AppShell() {
       setAnalysis(nextAnalysis);
       setCurrentRecord(record);
       await refreshLocalState();
+      setScreen('analysis');
     } catch (error) {
-      setErrorText(error instanceof Error ? error.message : 'Analysis failed.');
+      const code = (error as { code?: string } | null)?.code;
+      if (code === 'TIMEOUT') {
+        setErrorText('Taking longer than usual - tap to try again');
+      } else {
+        setErrorText('Something went wrong. Please try again.');
+      }
       setScreen('home');
     } finally {
       setIsAnalyzing(false);
@@ -96,16 +118,34 @@ export default function AppShell() {
     try {
       const paymentId = await startRazorpayPayment();
       const unlocked = await unlockScanRecord(currentRecord.id, paymentId);
+      const paidResult = await generateResumeFix({
+        jobDescription,
+        rolePreset: selectedRole,
+        resumeText,
+      });
+      const upgradedAnalysis = currentRecord.analysis
+        ? {
+            ...currentRecord.analysis,
+            breakdown: paidResult.breakdown,
+            improvedResume: paidResult.improvedResume,
+            improvedScore: paidResult.improvedScore,
+          }
+        : null;
 
-      if (unlocked) {
-        setCurrentRecord(unlocked);
-        setAnalysis(unlocked.analysis);
+      const updatedRecord =
+        unlocked && upgradedAnalysis
+          ? await updateScanAnalysis(unlocked.id, upgradedAnalysis, paymentId)
+          : unlocked;
+
+      if (updatedRecord) {
+        setCurrentRecord(updatedRecord);
+        setAnalysis(updatedRecord.analysis);
       }
 
       await refreshLocalState();
       setScreen('result');
     } catch (error) {
-      setErrorText(error instanceof Error ? error.message : 'Payment failed.');
+      setErrorText(error instanceof Error ? error.message : 'Payment completed, but resume generation failed.');
     } finally {
       setIsPaying(false);
     }
@@ -125,7 +165,14 @@ export default function AppShell() {
       return;
     }
 
-    await shareOnWhatsApp(analysis.atsScore, analysis.improvedScore);
+    const uri = await scorecardRef.current?.capture?.();
+
+    if (!uri) {
+      setErrorText('Could not capture the scorecard. Please try again.');
+      return;
+    }
+
+    await shareOnWhatsApp(uri, analysis.atsScore, analysis.improvedScore);
   }
 
   function openHistoryItem(item: ResumeScanRecord) {
@@ -133,6 +180,7 @@ export default function AppShell() {
     setAnalysis(item.analysis);
     setResumeText(item.sourceResumeText);
     setJobDescription(item.sourceJobDescription ?? '');
+    setSelectedRole(item.sourceRolePreset ?? 'general');
     setScreen(item.isUnlocked ? 'result' : 'paywall');
   }
 
@@ -164,6 +212,37 @@ export default function AppShell() {
               value={resumeText}
             />
 
+            <View style={styles.pickerCard}>
+              <Text style={styles.pickerLabel}>Target role</Text>
+              {Platform.OS === 'web' ? (
+                <View style={styles.roleGrid}>
+                  {ROLE_OPTIONS.map((option) => (
+                    <TouchableOpacity
+                      key={option.value}
+                      onPress={() => setSelectedRole(option.value)}
+                      style={[styles.roleChip, selectedRole === option.value ? styles.roleChipActive : null]}
+                    >
+                      <Text style={[styles.roleChipText, selectedRole === option.value ? styles.roleChipTextActive : null]}>
+                        {option.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              ) : (
+                <Picker
+                  dropdownIconColor={palette.text}
+                  itemStyle={styles.pickerItem}
+                  onValueChange={(value) => setSelectedRole(value)}
+                  selectedValue={selectedRole}
+                  style={styles.picker}
+                >
+                  {ROLE_OPTIONS.map((option) => (
+                    <Picker.Item key={option.value} label={option.label} value={option.value} />
+                  ))}
+                </Picker>
+              )}
+            </View>
+
             <TextInput
               multiline
               onChangeText={setJobDescription}
@@ -185,18 +264,60 @@ export default function AppShell() {
           </View>
         ) : null}
 
+        {screen === 'processing' ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionKicker}>Analyzing</Text>
+            <Text style={styles.sectionTitle}>We&apos;re optimizing your resume now</Text>
+            <Text style={styles.sectionBody}>
+              Checking ATS score, rejection risk, missing keywords, and stronger bullet points.
+            </Text>
+            <ProgressSteps steps={processingSteps} />
+            <Text style={styles.retryNote}>We&apos;re optimizing your resume, retrying automatically if the AI call fails.</Text>
+          </View>
+        ) : null}
+
         {screen === 'analysis' && analysis ? (
           <View style={styles.section}>
             <Text style={styles.sectionKicker}>Free analysis</Text>
-            <Text style={styles.sectionTitle}>Your resume will likely be rejected</Text>
+            <Text style={styles.sectionTitle}>{getAnalysisHeadline(analysis.atsScore)}</Text>
             <Text style={styles.alertText}>{analysis.summary}</Text>
 
-            <ScoreCard currentScore={analysis.atsScore} improvedScore={analysis.improvedScore} label="Needs work" />
-            <MetricRow labelLeft="ATS Score" valueLeft={`${analysis.atsScore}/100`} labelRight="JD Match" valueRight={analysis.matchScore ? `${analysis.matchScore}%` : 'Not added'} />
+            <ScoreCard
+              currentScore={analysis.atsScore}
+              improvedScore={analysis.improvedScore}
+              label={getScoreLabel(analysis.atsScore)}
+            />
+            <MetricRow
+              labelLeft="ATS Score"
+              valueLeft={`${analysis.atsScore}/100`}
+              labelRight="JD Match"
+              valueRight={analysis.matchScore !== null && analysis.matchScore !== undefined ? `${analysis.matchScore}%` : 'Not added'}
+            />
+            <Text style={styles.fearPrime}>{getFearPrime(analysis.atsScore)}</Text>
             <IssueList issues={analysis.issues} />
             <KeywordCard keywords={analysis.missingKeywords} />
-            <BeforeAfterCard before={beforeSample} after={afterSample} />
-            <ProgressSteps steps={processingSteps} />
+            <View style={styles.previewCard}>
+              <Text style={styles.previewLabel}>Preview of your improved resume</Text>
+
+              <View style={styles.previewBefore}>
+                <Text style={styles.previewBadge}>Before</Text>
+                <Text style={styles.previewText}>{analysis.preview?.before ?? beforeSample}</Text>
+              </View>
+
+              <View style={styles.previewAfter}>
+                <Text style={styles.previewBadge}>After</Text>
+                <Text style={styles.previewText}>{analysis.preview?.after ?? afterSample}</Text>
+              </View>
+
+              <View style={styles.blurContainer}>
+                <BlurView intensity={40} style={StyleSheet.absoluteFill} />
+                <Text style={styles.blurText}>3 more bullets improved...</Text>
+                <Text style={styles.blurText}>Skills section optimized...</Text>
+                <Text style={styles.blurText}>Keywords injected: React, Node.js, Git...</Text>
+              </View>
+
+              <Text style={styles.unlockCTA}>Unlock your full improved resume</Text>
+            </View>
             <Text style={styles.retryNote}>We are optimizing your resume. If the AI call fails, the app retries automatically.</Text>
 
             <View style={styles.buttonRow}>
@@ -230,7 +351,14 @@ export default function AppShell() {
           <View style={styles.section}>
             <Text style={styles.sectionKicker}>Unlocked result</Text>
             <Text style={styles.sectionTitle}>Your improved resume is ready</Text>
-            <ScoreCard currentScore={analysis.atsScore} improvedScore={analysis.improvedScore} label="Improved" />
+            <ViewShot options={{ fileName: 'resume-fixer-scorecard', format: 'png', quality: 1 }} ref={scorecardRef}>
+              <ScoreCard
+                currentScore={analysis.atsScore}
+                improvedScore={analysis.improvedScore}
+                label="Improved"
+                watermark
+              />
+            </ViewShot>
             <BeforeAfterCard before={beforeSample} after={afterSample} />
             <ExportPackageCard
               summary={analysis.improvedResume.summary}
@@ -348,6 +476,43 @@ function getBeforeSample(resumeText: string) {
   return firstLine || 'Worked on projects and daily responsibilities.';
 }
 
+function getAnalysisHeadline(score: number) {
+  if (score < 60) {
+    return 'Your resume will likely be rejected';
+  }
+
+  if (score < 80) {
+    return 'Your resume has shortlist potential, but it is not safe yet';
+  }
+
+  return 'Your resume is strong, but there is still room to convert better';
+}
+
+function getScoreLabel(score: number) {
+  if (score < 60) {
+    return 'High risk';
+  }
+
+  if (score < 80) {
+    return 'Needs work';
+  }
+
+  return 'Strong base';
+}
+
+function getFearPrime(score: number) {
+  if (score < 50) {
+    return "Recruiters filter resumes below 60 automatically. Yours won't reach a human.";
+  }
+  if (score < 65) {
+    return 'Your resume is average. Top candidates scoring 75+ are getting the interviews.';
+  }
+  if (score < 75) {
+    return "You're close. A few fixes could push you into the top 15% of applicants.";
+  }
+  return 'Strong resume. Optimize further to maximize your interview chances.';
+}
+
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: palette.bg },
   container: { gap: 18, paddingHorizontal: 20, paddingVertical: 18 },
@@ -358,7 +523,29 @@ const styles = StyleSheet.create({
   section: { gap: 18 },
   heroTitle: { color: palette.text, fontSize: 34, fontWeight: '800', lineHeight: 40 },
   heroSubtitle: { color: palette.textMuted, fontSize: 16, lineHeight: 24 },
+  sectionBody: { color: palette.textMuted, fontSize: 15, lineHeight: 23 },
   resumeInput: { backgroundColor: palette.panel, borderColor: palette.stroke, borderRadius: 22, borderWidth: 1, color: palette.text, minHeight: 220, padding: 16, textAlignVertical: 'top' },
+  pickerCard: { backgroundColor: palette.panelSoft, borderColor: palette.stroke, borderRadius: 22, borderWidth: 1, overflow: 'hidden' },
+  pickerLabel: { color: palette.textMuted, fontSize: 13, fontWeight: '700', paddingHorizontal: 16, paddingTop: 16, textTransform: 'uppercase' },
+  picker: {
+    backgroundColor: palette.panelSoft,
+    color: palette.text,
+    ...(Platform.OS === 'web'
+      ? {
+          borderWidth: 0,
+          paddingLeft: 12,
+        }
+      : null),
+  },
+  pickerItem: {
+    backgroundColor: palette.panelSoft,
+    color: palette.text,
+  },
+  roleGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, padding: 16 },
+  roleChip: { backgroundColor: palette.panel, borderColor: palette.stroke, borderRadius: 999, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10 },
+  roleChipActive: { backgroundColor: palette.mint, borderColor: palette.mint },
+  roleChipText: { color: palette.text, fontSize: 13, fontWeight: '700' },
+  roleChipTextActive: { color: palette.bg },
   jobInput: { backgroundColor: palette.panelSoft, borderColor: palette.stroke, borderRadius: 22, borderWidth: 1, color: palette.text, minHeight: 140, padding: 16, textAlignVertical: 'top' },
   buttonRow: { gap: 12 },
   primaryButton: { alignItems: 'center', backgroundColor: palette.mint, borderRadius: 18, paddingHorizontal: 18, paddingVertical: 16 },
@@ -369,6 +556,7 @@ const styles = StyleSheet.create({
   sectionKicker: { color: palette.mint, fontSize: 12, fontWeight: '800', letterSpacing: 1, textTransform: 'uppercase' },
   sectionTitle: { color: palette.text, fontSize: 28, fontWeight: '800', lineHeight: 34 },
   alertText: { color: palette.danger, fontSize: 16, fontWeight: '700', lineHeight: 24 },
+  fearPrime: { color: '#854F0B', fontSize: 14, fontWeight: '600', lineHeight: 21 },
   metricRow: { flexDirection: 'row', gap: 12 },
   metricBlock: { backgroundColor: palette.panel, borderColor: palette.stroke, borderRadius: 20, borderWidth: 1, flex: 1, padding: 16 },
   metricLabel: { color: palette.textMuted, fontSize: 12, fontWeight: '700', textTransform: 'uppercase' },
@@ -387,4 +575,13 @@ const styles = StyleSheet.create({
   keywordWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   keywordBadge: { backgroundColor: '#2B1730', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8 },
   keywordText: { color: '#FFB7E8', fontSize: 13, fontWeight: '700' },
+  previewCard: { backgroundColor: palette.panel, borderColor: palette.strokeStrong, borderRadius: 22, borderWidth: 1, gap: 12, overflow: 'hidden', padding: 18 },
+  previewLabel: { color: palette.text, fontSize: 18, fontWeight: '700' },
+  previewBefore: { backgroundColor: '#2A1417', borderRadius: 18, gap: 8, padding: 14 },
+  previewAfter: { backgroundColor: '#122621', borderRadius: 18, gap: 8, padding: 14 },
+  previewBadge: { color: palette.textMuted, fontSize: 12, fontWeight: '800', textTransform: 'uppercase' },
+  previewText: { color: palette.text, fontSize: 15, lineHeight: 23 },
+  blurContainer: { backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 18, gap: 6, minHeight: 96, justifyContent: 'center', overflow: 'hidden', padding: 16 },
+  blurText: { color: palette.textMuted, fontSize: 14, lineHeight: 21 },
+  unlockCTA: { color: palette.mint, fontSize: 15, fontWeight: '800' },
 });

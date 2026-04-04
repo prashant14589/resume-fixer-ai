@@ -6,10 +6,12 @@ export function ScoreCard({
   currentScore,
   improvedScore,
   label,
+  watermark = false,
 }: {
   currentScore: number;
   improvedScore: number;
   label: string;
+  watermark?: boolean;
 }) {
   return (
     <View style={styles.card}>
@@ -28,6 +30,7 @@ export function ScoreCard({
         <Text style={styles.badge}>{label}</Text>
         <Text style={styles.delta}>+{improvedScore - currentScore} point upside</Text>
       </View>
+      {watermark ? <Text style={styles.watermark}>Resume Fixer AI</Text> : null}
     </View>
   );
 }
@@ -95,5 +98,11 @@ const styles = StyleSheet.create({
     color: palette.mint,
     fontSize: 14,
     fontWeight: '700',
+  },
+  watermark: {
+    alignSelf: 'flex-end',
+    color: palette.textMuted,
+    fontSize: 11,
+    fontWeight: '600',
   },
 });
