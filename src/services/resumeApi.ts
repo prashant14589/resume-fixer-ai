@@ -23,7 +23,7 @@ async function analyzeResumeWithSupabase(input: AnalyzeResumeInput): Promise<Res
 
   if (!resumeText.trim() && !fileBase64) {
     throw new Error(
-      'Add resume text or use a plain text file for live AI testing. PDF and DOCX parsing will be added in the next backend slice.'
+      'Paste your resume text or upload a DOCX file to continue.'
     );
   }
 

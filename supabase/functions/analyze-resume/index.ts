@@ -1,5 +1,6 @@
 // @ts-nocheck
 
+import { unzipSync } from 'https://esm.sh/fflate@0.8.2';
 import { scoreResumeAgainstJob } from '../_shared/atsEvaluator.ts';
 import { parseResumeTextToSections } from '../_shared/resumeParser.ts';
 import { buildPreviewPrompt } from '../_shared/rewritePrompts.ts';
@@ -210,22 +211,52 @@ function extractResumeText(body: AnalyzeResumeRequest) {
   }
 
   const mimeType = body.mimeType ?? '';
+  const fileName = body.fileName ?? '';
 
-  if (mimeType === 'text/plain' || body.fileName?.endsWith('.txt')) {
+  if (mimeType === 'text/plain' || fileName.endsWith('.txt')) {
     return decodeBase64(body.fileBase64);
   }
 
   if (
-    mimeType === 'application/pdf' ||
-    mimeType === 'application/msword' ||
-    mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+    fileName.endsWith('.docx')
   ) {
-    throw new Error(
-      'File was uploaded successfully, but PDF and DOCX parsing is not enabled yet. Use pasted text for live AI now, or add a parser in the next backend slice.'
-    );
+    return extractTextFromDocx(body.fileBase64);
   }
 
-  throw new Error('Unsupported file type for live AI analysis.');
+  if (mimeType === 'application/pdf' || mimeType === 'application/msword' || fileName.endsWith('.pdf') || fileName.endsWith('.doc')) {
+    throw new Error('PDF and DOC files are not supported yet. Please upload a DOCX file or paste your resume text.');
+  }
+
+  throw new Error('Unsupported file type. Please upload a DOCX file or paste your resume text.');
+}
+
+function extractTextFromDocx(base64: string): string {
+  const binary = atob(base64);
+  const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+
+  const files = unzipSync(bytes);
+  const docXmlBytes = files['word/document.xml'];
+
+  if (!docXmlBytes) {
+    throw new Error('Invalid DOCX file: word/document.xml not found.');
+  }
+
+  const xml = new TextDecoder().decode(docXmlBytes);
+
+  return xml
+    .replace(/<\/w:p>/g, '\n')
+    .replace(/<w:br[^>]*\/?>/g, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .split('\n')
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .join('\n');
 }
 
 function decodeBase64(value: string) {

@@ -545,47 +545,71 @@ function assembleImprovedResume(
 
 async function callJsonOpenAI(prompt: string, schema: Record<string, unknown>, maxOutputTokens: number) {
   const apiKey = Deno.env.get('OPENAI_API_KEY');
-  const response = await fetch('https://api.openai.com/v1/responses', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'gpt-4o-mini',
-      input: [
-        {
-          role: 'user',
-          content: [{ text: prompt, type: 'input_text' }],
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const response = await fetch('https://api.openai.com/v1/responses', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
         },
-      ],
-      max_output_tokens: maxOutputTokens,
-      text: {
-        format: {
-          name: 'resume_fix',
-          schema: {
-            additionalProperties: false,
-            ...schema,
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          input: [
+            {
+              role: 'user',
+              content: [{ text: prompt, type: 'input_text' }],
+            },
+          ],
+          max_output_tokens: maxOutputTokens,
+          text: {
+            format: {
+              name: 'resume_fix',
+              schema: {
+                additionalProperties: false,
+                ...schema,
+              },
+              type: 'json_schema',
+              strict: true,
+            },
           },
-          type: 'json_schema',
-          strict: true,
-        },
-      },
-    }),
-  });
+        }),
+      });
 
-  if (!response.ok) {
-    throw new Error(`OpenAI request failed: ${response.status} ${await response.text()}`);
+      if (!response.ok) {
+        const bodyText = await response.text();
+        const err = new Error(`OpenAI request failed: ${response.status} ${bodyText}`);
+        // Don't retry 4xx client errors (bad key, invalid schema, etc.)
+        if (response.status >= 400 && response.status < 500) {
+          throw err;
+        }
+        throw err;
+      }
+
+      const payload = await response.json();
+      const outputText = payload.output?.[0]?.content?.[0]?.text ?? payload.output_text;
+
+      if (!outputText) {
+        throw new Error('OpenAI did not return structured output text.');
+      }
+
+      return JSON.parse(outputText);
+    } catch (error) {
+      lastError = error;
+      // Don't retry 4xx client errors
+      const message = error instanceof Error ? error.message : '';
+      if (/OpenAI request failed: 4\d\d/.test(message)) {
+        throw error;
+      }
+      if (attempt < 2) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 1000 * Math.pow(2, attempt)));
+      }
+    }
   }
 
-  const payload = await response.json();
-  const outputText = payload.output?.[0]?.content?.[0]?.text ?? payload.output_text;
-
-  if (!outputText) {
-    throw new Error('OpenAI did not return structured output text.');
-  }
-
-  return JSON.parse(outputText);
+  throw lastError;
 }
 
 function mergeSkills(originalSkills: string[], rewrittenSkills: string[]) {
