@@ -2,13 +2,13 @@
 
 > Every agent reads this before starting work.
 > Every agent updates this after completing work.
-> Last updated: 2026-04-06 — P1 DOCX + file upload, P2 loading states, P3 legal docs + footer
+> Last updated: 2026-04-06 — Fixed PDF export + WhatsApp share + Razorpay prefill. Pushed 2913654.
 
-## Current readiness: ~82%
+## Current readiness: ~88%
 
 ## Sprint day: 2
 
-## Next immediate task: Host Privacy Policy + T&C on GitHub Pages, then update LEGAL_URLS in AppShell → Razorpay live mode activation
+## Next immediate task: Install fresh preview APK → smoke-test PDF + share → host PP/T&C on GitHub Pages → Razorpay live mode
 
 ---
 
@@ -51,9 +51,9 @@ _(none)_
 
 ## TODO — P2 Reliability
 
-| Task                                        | Priority | Notes                                 |
-| ------------------------------------------- | -------- | ------------------------------------- |
-| Expo build succeeds for Android (eas build) | P2       | Not yet tested.                       |
+| Task                                                   | Priority | Notes                                                                              |
+| ------------------------------------------------------ | -------- | ---------------------------------------------------------------------------------- |
+| Install new preview APK + smoke-test PDF, share, pay   | P2       | New build needed — code at commit 2913654. Queue via `eas build --profile preview` |
 
 ## TODO — P3 Legal (required before live payments)
 
