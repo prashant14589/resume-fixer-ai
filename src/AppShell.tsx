@@ -44,12 +44,20 @@ import { generateResumeFix } from "./services/resumeFixApi";
 import { shareOnWhatsApp } from "./services/share";
 import { isSupabaseConfigured } from "./services/supabase";
 import { palette } from "./theme/palette";
-import { AnalyzeResumeInput, ResumeAnalysis, ResumeScanRecord, SelectedResume } from "./types/resume";
+import {
+  AnalyzeResumeInput,
+  ResumeAnalysis,
+  ResumeScanRecord,
+  SelectedResume,
+} from "./types/resume";
 
-const PRIVACY_POLICY_URL = 'https://YOUR_USERNAME.github.io/resume-fixer-ai/privacy-policy';
-const TERMS_URL = 'https://YOUR_USERNAME.github.io/resume-fixer-ai/terms';
+const PRIVACY_POLICY_URL =
+  "https://prashant14589.github.io/resume-fixer-ai/docs/privacy-policy";
+const TERMS_URL =
+  "https://prashant14589.github.io/resume-fixer-ai/docs/terms-and-conditions";
 
-const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+const DOCX_MIME =
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 type Screen =
   | "home"
@@ -79,7 +87,9 @@ export default function AppShell() {
   );
   const [errorText, setErrorText] = useState("");
   const [consentGiven, setConsentGiven] = useState(false);
-  const [selectedResume, setSelectedResume] = useState<SelectedResume | null>(null);
+  const [selectedResume, setSelectedResume] = useState<SelectedResume | null>(
+    null,
+  );
   const [credits, setCredits] = useState(0);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isPaying, setIsPaying] = useState(false);
@@ -119,7 +129,7 @@ export default function AppShell() {
   async function handleFilePick() {
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: [DOCX_MIME, 'text/plain'],
+        type: [DOCX_MIME, "text/plain"],
         copyToCacheDirectory: true,
       });
       if (result.canceled) {
@@ -132,15 +142,17 @@ export default function AppShell() {
         size: asset.size ?? 0,
         uri: asset.uri,
       });
-      setResumeText('');
+      setResumeText("");
     } catch {
-      setErrorText('Could not open file picker. Please paste your resume text instead.');
+      setErrorText(
+        "Could not open file picker. Please paste your resume text instead.",
+      );
     }
   }
 
   async function handleAnalyze() {
     if (!resumeText.trim() && !selectedResume) {
-      setErrorText('Paste your resume text or upload a DOCX file.');
+      setErrorText("Paste your resume text or upload a DOCX file.");
       return;
     }
 
@@ -237,7 +249,7 @@ export default function AppShell() {
 
   async function handlePdfExport() {
     if (!currentRecord?.isUnlocked) {
-      setErrorText('Payment is required before PDF download.');
+      setErrorText("Payment is required before PDF download.");
       return;
     }
 
@@ -245,7 +257,7 @@ export default function AppShell() {
     try {
       await exportResumePdf(currentRecord);
     } catch {
-      setErrorText('PDF export failed. Please try again.');
+      setErrorText("PDF export failed. Please try again.");
     } finally {
       setIsExporting(false);
     }
@@ -260,11 +272,11 @@ export default function AppShell() {
     try {
       // Attempt ViewShot capture; fall back to empty string so shareOnWhatsApp
       // uses the text-share path when image capture is unavailable.
-      const uri = (await scorecardRef.current?.capture?.()) ?? '';
+      const uri = (await scorecardRef.current?.capture?.()) ?? "";
 
       await shareOnWhatsApp(uri, analysis.atsScore, analysis.improvedScore);
     } catch {
-      setErrorText('Share failed. Please try again.');
+      setErrorText("Share failed. Please try again.");
     } finally {
       setIsSharing(false);
     }
@@ -286,12 +298,12 @@ export default function AppShell() {
         <Text style={styles.eyebrow}>Resume Fixer AI</Text>
         <View style={styles.banner}>
           <Text style={styles.bannerTitle}>
-            {backendReady ? 'Live AI Mode' : 'Local Fallback Mode'}
+            {backendReady ? "Live AI Mode" : "Local Fallback Mode"}
           </Text>
           <Text style={styles.bannerCopy}>
             {backendReady
-              ? 'Paste resume text or upload a DOCX file. PDF upload coming soon.'
-              : 'Running with mock data. Add Supabase keys to enable live AI.'}
+              ? "Paste resume text or upload a DOCX file. PDF upload coming soon."
+              : "Running with mock data. Add Supabase keys to enable live AI."}
           </Text>
         </View>
 
@@ -317,9 +329,14 @@ export default function AppShell() {
               value={resumeText}
             />
 
-            <TouchableOpacity onPress={handleFilePick} style={styles.uploadButton}>
+            <TouchableOpacity
+              onPress={handleFilePick}
+              style={styles.uploadButton}
+            >
               <Text style={styles.uploadButtonText}>
-                {selectedResume ? `✓ ${selectedResume.name}` : 'Upload DOCX or TXT'}
+                {selectedResume
+                  ? `✓ ${selectedResume.name}`
+                  : "Upload DOCX or TXT"}
               </Text>
             </TouchableOpacity>
 
@@ -405,12 +422,12 @@ export default function AppShell() {
             <View style={styles.buttonRow}>
               <PrimaryButton
                 disabled={!consentGiven || isAnalyzing}
-                label={isAnalyzing ? 'Analyzing...' : 'Check Resume Free'}
+                label={isAnalyzing ? "Analyzing..." : "Check Resume Free"}
                 onPress={handleAnalyze}
               />
               <SecondaryButton
                 label="History"
-                onPress={() => setScreen('history')}
+                onPress={() => setScreen("history")}
               />
             </View>
 
@@ -602,23 +619,23 @@ export default function AppShell() {
             <View style={styles.buttonRow}>
               <PrimaryButton
                 disabled={isExporting}
-                label={isExporting ? 'Exporting...' : 'Download PDF'}
+                label={isExporting ? "Exporting..." : "Download PDF"}
                 onPress={handlePdfExport}
               />
               <SecondaryButton
                 disabled={isSharing}
-                label={isSharing ? 'Sharing...' : 'Share Result'}
+                label={isSharing ? "Sharing..." : "Share Result"}
                 onPress={handleWhatsAppShare}
               />
               <SecondaryButton
                 label="History"
-                onPress={() => setScreen('history')}
+                onPress={() => setScreen("history")}
               />
             </View>
           </View>
         ) : null}
 
-        {screen === 'history' ? (
+        {screen === "history" ? (
           <View style={styles.section}>
             <Text style={styles.sectionKicker}>Saved scans</Text>
             <Text style={styles.sectionTitle}>Open previous results</Text>
@@ -626,7 +643,7 @@ export default function AppShell() {
             <View style={styles.buttonRow}>
               <PrimaryButton
                 label="New Resume Check"
-                onPress={() => setScreen('home')}
+                onPress={() => setScreen("home")}
               />
             </View>
           </View>
@@ -684,7 +701,10 @@ function SecondaryButton({
       activeOpacity={0.9}
       disabled={disabled}
       onPress={onPress}
-      style={[styles.secondaryButton, disabled === true && styles.primaryButtonDisabled]}
+      style={[
+        styles.secondaryButton,
+        disabled === true && styles.primaryButtonDisabled,
+      ]}
     >
       <Text style={styles.secondaryButtonText}>{label}</Text>
     </TouchableOpacity>
@@ -1069,9 +1089,33 @@ const styles = StyleSheet.create({
   },
   blurText: { color: palette.textMuted, fontSize: 14, lineHeight: 21 },
   unlockCTA: { color: palette.mint, fontSize: 15, fontWeight: "800" },
-  uploadButton: { alignItems: 'center', backgroundColor: palette.panelSoft, borderColor: palette.stroke, borderRadius: 16, borderStyle: 'dashed', borderWidth: 1, paddingHorizontal: 16, paddingVertical: 14 },
-  uploadButtonText: { color: palette.textMuted, fontSize: 14, fontWeight: '600' },
-  footer: { alignItems: 'center', flexDirection: 'row', justifyContent: 'center', marginTop: 8, paddingBottom: 12, gap: 8 },
-  footerLink: { color: palette.textMuted, fontSize: 12, textDecorationLine: 'underline' },
+  uploadButton: {
+    alignItems: "center",
+    backgroundColor: palette.panelSoft,
+    borderColor: palette.stroke,
+    borderRadius: 16,
+    borderStyle: "dashed",
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  uploadButtonText: {
+    color: palette.textMuted,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  footer: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "center",
+    marginTop: 8,
+    paddingBottom: 12,
+    gap: 8,
+  },
+  footerLink: {
+    color: palette.textMuted,
+    fontSize: 12,
+    textDecorationLine: "underline",
+  },
   footerDot: { color: palette.textMuted, fontSize: 12 },
 });
