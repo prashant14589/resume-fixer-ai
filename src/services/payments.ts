@@ -29,11 +29,17 @@ export async function startRazorpayPayment() {
   const result = await RazorpayCheckout.open({
     amount: order.amount,
     currency: order.currency,
-    description: 'Resume Fixer AI unlock',
+    description: 'AI resume rewrite — one-time unlock',
     key: order.keyId,
     name: 'Resume Fixer AI',
     order_id: order.orderId,
-    prefill: {},
+    prefill: {
+      contact: '9000000000',
+      email: 'user@resumefixer.ai',
+    },
+    notes: {
+      product: 'resume_rewrite',
+    },
     theme: { color: '#76E4C3' },
   });
 

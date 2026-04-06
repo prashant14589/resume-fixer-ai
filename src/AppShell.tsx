@@ -258,12 +258,9 @@ export default function AppShell() {
 
     setIsSharing(true);
     try {
-      const uri = await scorecardRef.current?.capture?.();
-
-      if (!uri) {
-        setErrorText('Could not capture the scorecard. Please try again.');
-        return;
-      }
+      // Attempt ViewShot capture; fall back to empty string so shareOnWhatsApp
+      // uses the text-share path when image capture is unavailable.
+      const uri = (await scorecardRef.current?.capture?.()) ?? '';
 
       await shareOnWhatsApp(uri, analysis.atsScore, analysis.improvedScore);
     } catch {

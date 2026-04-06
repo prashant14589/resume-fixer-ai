@@ -7,15 +7,31 @@ import { ResumeScanRecord } from '../types/resume';
 export async function exportResumePdf(record: ResumeScanRecord) {
   const html = buildResumeHtml(record);
 
-  const result = await Print.printToFileAsync({
-    html,
-  });
-
-  if (Platform.OS !== 'web' && (await Sharing.isAvailableAsync())) {
-    await Sharing.shareAsync(result.uri);
+  if (Platform.OS === 'web') {
+    // Web: open print dialog
+    await Print.printAsync({ html });
+    return '';
   }
 
-  return result.uri;
+  // Android: try save-to-file + share first, fall back to system print dialog
+  try {
+    const result = await Print.printToFileAsync({ html });
+    const sharingAvailable = await Sharing.isAvailableAsync();
+    if (sharingAvailable) {
+      await Sharing.shareAsync(result.uri, {
+        mimeType: 'application/pdf',
+        dialogTitle: 'Save or share your improved resume',
+        UTI: 'com.adobe.pdf',
+      });
+      return result.uri;
+    }
+  } catch {
+    // fall through to system print dialog
+  }
+
+  // Fallback: system print dialog — user taps "Save as PDF"
+  await Print.printAsync({ html });
+  return '';
 }
 
 function buildResumeHtml(record: ResumeScanRecord) {
