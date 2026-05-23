@@ -9,13 +9,11 @@ import { HistoryCard } from './src/components/HistoryCard';
 import { HistoryList } from './src/components/HistoryList';
 import { InsightBanner } from './src/components/InsightBanner';
 import { IssueList } from './src/components/IssueList';
-import { PaywallSummary } from './src/components/PaywallSummary';
-import { PlanCard } from './src/components/PlanCard';
 import { ProgressSteps } from './src/components/ProgressSteps';
 import { QuickWinsCard } from './src/components/QuickWinsCard';
 import { ScoreCard } from './src/components/ScoreCard';
 import { TrustBar } from './src/components/TrustBar';
-import { marketingPlans, processingSteps } from './src/data/marketingDemo';
+import { processingSteps } from './src/data/marketingDemo';
 import { getScanHistory, saveScanToHistory } from './src/services/localHistory';
 import { analyzeResume } from './src/services/resumeApi';
 import { isSupabaseConfigured } from './src/services/supabase';
@@ -264,51 +262,12 @@ export default function App() {
             />
 
             <View style={styles.buttonRow}>
-              <PrimaryButton label="Unlock Full Fix for Rs 299" onPress={() => setScreen('paywall')} />
+              <PrimaryButton label="Get improved resume" onPress={() => setScreen('download')} />
               <SecondaryButton label="Review Again" onPress={() => setScreen('processing')} />
             </View>
           </View>
         ) : null}
 
-        {screen === 'paywall' ? (
-          <View style={styles.section}>
-            <Text style={styles.sectionKicker}>Complete transformation</Text>
-            <Text style={styles.sectionTitle}>Unlock the recruiter-ready version of this resume</Text>
-            <Text style={styles.sectionBody}>
-              You have already seen the diagnosis. Now unlock the rewritten version, cleaner structure, and downloadable PDF.
-            </Text>
-
-            <PaywallSummary />
-
-            <TrustBar
-              items={['One-time payment', 'Built for India job seekers', 'No guaranteed-results claims']}
-            />
-
-            {marketingPlans.map((plan) => (
-              <PlanCard
-                key={plan.code}
-                amount={plan.amount}
-                credits={plan.credits}
-                highlighted={plan.highlighted}
-                note={plan.highlighted ? 'Most chosen' : undefined}
-                subtitle={plan.subtitle}
-                title={plan.title}
-              />
-            ))}
-
-            <View style={styles.paywallNote}>
-              <Text style={styles.paywallNoteTitle}>Why users choose Pro Pack</Text>
-              <Text style={styles.paywallNoteCopy}>
-                Most applicants test multiple versions for different roles. The 3-fix pack gives enough room without feeling expensive.
-              </Text>
-            </View>
-
-            <View style={styles.buttonRow}>
-              <PrimaryButton label="Continue with Pro Pack" onPress={() => setScreen('download')} />
-              <SecondaryButton label="Back" onPress={() => setScreen('results')} />
-            </View>
-          </View>
-        ) : null}
 
         {screen === 'download' ? (
           <View style={styles.section}>
