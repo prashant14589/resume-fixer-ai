@@ -17,6 +17,9 @@ import {
 import ViewShot from "react-native-view-shot";
 
 import { BeforeAfterCard } from "./components/BeforeAfterCard";
+import { CoverLetterCard } from "./components/CoverLetterCard";
+import { CoverLetterUpsellCard } from "./components/CoverLetterUpsellCard";
+import { generateCoverLetter } from "./services/coverLetterApi";
 import { ExportPackageCard } from "./components/ExportPackageCard";
 import { HistoryCard } from "./components/HistoryCard";
 import { HistoryList } from "./components/HistoryList";
@@ -28,6 +31,11 @@ import {
   marketingAnalysis,
   paywallOffer,
   processingSteps,
+  PAYWALL_TIERS,
+  DEFAULT_TIER,
+  COMPANY_OPTIONS,
+  type PaywallTier,
+  type CompanyCode,
 } from "./data/marketingDemo";
 import { hasGivenConsent, saveConsent } from "./services/consent";
 import { getCredits } from "./services/entitlement";
@@ -50,6 +58,9 @@ import {
   ResumeScanRecord,
   SelectedResume,
 } from "./types/resume";
+
+// Set to false before production build
+const BYPASS_PAYWALL = true;
 
 const PRIVACY_POLICY_URL =
   "https://prashant14589.github.io/resume-fixer-ai/docs/privacy-policy";
@@ -80,6 +91,8 @@ export default function AppShell() {
   const [resumeText, setResumeText] = useState("");
   const [jobDescription, setJobDescription] = useState("");
   const [selectedRole, setSelectedRole] = useState("software-dev");
+  const [selectedCompany, setSelectedCompany] = useState<CompanyCode>("general");
+  const [selectedTier, setSelectedTier] = useState<PaywallTier>(DEFAULT_TIER);
   const [analysis, setAnalysis] = useState<ResumeAnalysis | null>(null);
   const [history, setHistory] = useState<ResumeScanRecord[]>([]);
   const [currentRecord, setCurrentRecord] = useState<ResumeScanRecord | null>(
@@ -95,6 +108,8 @@ export default function AppShell() {
   const [isPaying, setIsPaying] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
+  const [coverLetterText, setCoverLetterText] = useState<string | null>(null);
+  const [isGeneratingCoverLetter, setIsGeneratingCoverLetter] = useState(false);
   const scorecardRef = useRef<ViewShot | null>(null);
   const backendReady = isSupabaseConfigured();
 
@@ -203,7 +218,7 @@ export default function AppShell() {
 
     let paymentId: string;
     try {
-      paymentId = await startRazorpayPayment();
+      paymentId = await startRazorpayPayment(selectedTier.price);
     } catch {
       setErrorText("Payment was not completed. No charge was made.");
       setIsPaying(false);
@@ -247,6 +262,29 @@ export default function AppShell() {
     }
   }
 
+  async function handleBypassPaywall() {
+    if (!currentRecord) return;
+    setIsPaying(true);
+    setErrorText("");
+    try {
+      const unlocked = await unlockScanRecord(currentRecord.id, "test-bypass");
+      const paidResult = await generateResumeFix({ jobDescription, rolePreset: selectedRole, resumeText });
+      const upgradedAnalysis = currentRecord.analysis
+        ? { ...currentRecord.analysis, breakdown: paidResult.breakdown, improvedResume: paidResult.improvedResume, improvedScore: paidResult.improvedScore }
+        : null;
+      const updatedRecord = unlocked && upgradedAnalysis
+        ? await updateScanAnalysis(unlocked.id, upgradedAnalysis, "test-bypass")
+        : unlocked;
+      if (updatedRecord) { setCurrentRecord(updatedRecord); setAnalysis(updatedRecord.analysis); }
+      await refreshLocalState();
+      setScreen("result");
+    } catch {
+      setErrorText("Resume generation failed. Please try again.");
+    } finally {
+      setIsPaying(false);
+    }
+  }
+
   async function handlePdfExport() {
     if (!currentRecord?.isUnlocked) {
       setErrorText("Payment is required before PDF download.");
@@ -260,6 +298,23 @@ export default function AppShell() {
       setErrorText("PDF export failed. Please try again.");
     } finally {
       setIsExporting(false);
+    }
+  }
+
+  async function handleGenerateCoverLetter() {
+    if (!currentRecord) return;
+    setIsGeneratingCoverLetter(true);
+    try {
+      const result = await generateCoverLetter({
+        resumeText: currentRecord.sourceResumeText ?? resumeText,
+        jobDescription: currentRecord.sourceJobDescription ?? jobDescription,
+        rolePreset: currentRecord.sourceRolePreset ?? selectedRole,
+      });
+      setCoverLetterText(result.coverLetterText);
+    } catch {
+      setErrorText("Could not generate cover letter. Please try again.");
+    } finally {
+      setIsGeneratingCoverLetter(false);
     }
   }
 
@@ -385,6 +440,31 @@ export default function AppShell() {
                   ))}
                 </Picker>
               )}
+            </View>
+
+            <View style={styles.pickerCard}>
+              <Text style={styles.pickerLabel}>Target company</Text>
+              <View style={styles.roleGrid}>
+                {COMPANY_OPTIONS.map((option) => (
+                  <TouchableOpacity
+                    key={option.value}
+                    onPress={() => setSelectedCompany(option.value)}
+                    style={[
+                      styles.roleChip,
+                      selectedCompany === option.value ? styles.roleChipActive : null,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.roleChipText,
+                        selectedCompany === option.value ? styles.roleChipTextActive : null,
+                      ]}
+                    >
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
             </View>
 
             <TextInput
@@ -528,8 +608,8 @@ export default function AppShell() {
 
             <View style={styles.buttonRow}>
               <PrimaryButton
-                label={paywallOffer.cta}
-                onPress={() => setScreen("paywall")}
+                label={BYPASS_PAYWALL ? "Get Improved Resume (Test)" : paywallOffer.cta}
+                onPress={BYPASS_PAYWALL ? handleBypassPaywall : () => setScreen("paywall")}
               />
               <SecondaryButton
                 label="Edit Input"
@@ -543,15 +623,38 @@ export default function AppShell() {
           <View style={styles.section}>
             <Text style={styles.sectionKicker}>Pay once</Text>
             <Text style={styles.sectionTitle}>Fix your resume instantly</Text>
-            <View style={styles.priceCard}>
-              <Text style={styles.struckPrice}>{paywallOffer.struckPrice}</Text>
-              <Text style={styles.livePrice}>{paywallOffer.price}</Text>
-              <Text style={styles.priceCopy}>
-                Full improved resume, stronger bullets, PDF export, and WhatsApp
-                share.
-              </Text>
-            </View>
-            <BenefitList items={paywallOffer.benefits} />
+
+            {PAYWALL_TIERS.map((tier) => (
+              <TouchableOpacity
+                key={tier.code}
+                onPress={() => setSelectedTier(tier)}
+                style={[
+                  styles.tierCard,
+                  selectedTier.code === tier.code ? styles.tierCardSelected : null,
+                ]}
+                activeOpacity={0.85}
+              >
+                {tier.code === "full-fix" ? (
+                  <View style={styles.tierBadge}>
+                    <Text style={styles.tierBadgeText}>POPULAR</Text>
+                  </View>
+                ) : null}
+                {tier.code === "credit-pack" ? (
+                  <View style={[styles.tierBadge, styles.tierBadgeValue]}>
+                    <Text style={styles.tierBadgeText}>BEST VALUE</Text>
+                  </View>
+                ) : null}
+                <Text style={styles.tierLabel}>{tier.label}</Text>
+                <View style={styles.tierPriceRow}>
+                  <Text style={styles.tierPrice}>₹{tier.price}</Text>
+                  <Text style={styles.tierStrike}>{tier.strikePrice}</Text>
+                </View>
+                {tier.features.map((f) => (
+                  <Text key={f} style={styles.tierFeature}>{"✓  "}{f}</Text>
+                ))}
+              </TouchableOpacity>
+            ))}
+
             <TrustBar
               items={[
                 "Razorpay verified",
@@ -566,7 +669,7 @@ export default function AppShell() {
             <View style={styles.buttonRow}>
               <PrimaryButton
                 label={
-                  isPaying ? "Opening Razorpay..." : "Fix Resume Instantly"
+                  isPaying ? "Opening Razorpay..." : `Fix Resume — ₹${selectedTier.price}`
                 }
                 onPress={handlePayment}
               />
@@ -615,6 +718,15 @@ export default function AppShell() {
                 },
               ]}
             />
+
+            {coverLetterText === null ? (
+              <CoverLetterUpsellCard
+                isGenerating={isGeneratingCoverLetter}
+                onGenerate={handleGenerateCoverLetter}
+              />
+            ) : (
+              <CoverLetterCard coverLetterText={coverLetterText} />
+            )}
 
             <View style={styles.buttonRow}>
               <PrimaryButton
@@ -1118,4 +1230,43 @@ const styles = StyleSheet.create({
     textDecorationLine: "underline",
   },
   footerDot: { color: palette.textMuted, fontSize: 12 },
+  tierCard: {
+    backgroundColor: palette.panel,
+    borderColor: palette.stroke,
+    borderRadius: 16,
+    borderWidth: 2,
+    gap: 4,
+    padding: 16,
+    position: "relative",
+  },
+  tierCardSelected: {
+    borderColor: palette.mint,
+    backgroundColor: palette.panelSoft,
+  },
+  tierBadge: {
+    backgroundColor: palette.mint,
+    borderBottomLeftRadius: 6,
+    borderBottomRightRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    position: "absolute",
+    right: 14,
+    top: 0,
+  },
+  tierBadgeValue: { backgroundColor: palette.warning },
+  tierBadgeText: {
+    color: palette.bg,
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+  },
+  tierLabel: { color: palette.text, fontSize: 16, fontWeight: "700" },
+  tierPriceRow: { alignItems: "baseline", flexDirection: "row", gap: 8 },
+  tierPrice: { color: palette.mint, fontSize: 24, fontWeight: "800" },
+  tierStrike: {
+    color: palette.textMuted,
+    fontSize: 14,
+    textDecorationLine: "line-through",
+  },
+  tierFeature: { color: palette.textMuted, fontSize: 13, lineHeight: 20 },
 });

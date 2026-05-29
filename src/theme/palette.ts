@@ -8,5 +8,6 @@ export const palette = {
   textMuted: '#A7B3C5',
   mint: '#76E4C3',
   warning: '#FFBF69',
+  warningBg: '#2D1F00',
   danger: '#FF7A7A',
 };

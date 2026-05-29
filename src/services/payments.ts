@@ -15,13 +15,13 @@ type VerifyPaymentResponse = {
   verified: boolean;
 };
 
-export async function startRazorpayPayment() {
+export async function startRazorpayPayment(amountInr: number = 199) {
   if (Platform.OS === 'web') {
     throw new Error('Razorpay checkout needs a native Android build. Web preview cannot complete real payments.');
   }
 
   const order = await invokeSupabaseFunction<CreateOrderResponse>('create-payment-order', {
-    amountInr: 199,
+    amountInr,
   });
 
   const RazorpayCheckout = require('react-native-razorpay').default;
